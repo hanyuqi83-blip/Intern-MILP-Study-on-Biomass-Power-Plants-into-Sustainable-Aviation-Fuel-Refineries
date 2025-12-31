@@ -1,278 +1,299 @@
-# FT (Fischer–Tropsch) MILP Formulation (Basic)
+# FT (Fischer–Tropsch) biomass-to-jet model
 
-This document describes the **basic** MILP used in `src/ft/biomass_to_jet_ft_milp.py`.
-It is a two-stage stochastic MILP with:
-- **First-stage** investment decisions (build / capacity / wax upgrading / biomass sourcing + grid connection sizing),
-- **Second-stage** scenario-dependent operations (syngas yields, FT conversion, utilities, revenue, OPEX).
+This document describes the techno-economic model implemented in Biomass_to_Jet_FT_MILP.py.
 
-> Notation follows the implementation: biomass is **as-received (wet basis)**, drying reduces mass.
+This model was developed as part of an internship project at EDF (Électricité de France).
+Due to confidentiality constraints related to equipment vendors, technology package providers, and project-specific operating data, the model in this repository is not the exact internship deliverable and does not contain any proprietary information. Instead, it is a sanitized and adapted version built solely from publicly available / open-source data and literature assumptions.
 
----
+The purpose of releasing this code is to share the modeling workflow, decision logic, and analytical approach used during the internship (process-to-economics mapping, uncertainty handling, and investment evaluation), rather than to reproduce any confidential industrial design or performance results.
 
-## Sets and indices
+It supports two run modes:
 
-- $r \in \mathcal{R}$ : biomass supply rings (distance bins)
-- $s \in \mathcal{S}$ : scenarios, with probability $\pi_s$
-- $k \in \mathcal{K}$ : discrete plant capacity options (Jet capacity)
+Deterministic evaluation (no solver) — evaluates a fixed design/operation defined in model.fixed (useful for debugging and reproducing numbers based on the public dataset).
 
----
+Two-stage stochastic MILP (PuLP + solver) — optimizes first-stage investment/contract decisions and second-stage scenario operations, maximizing 20-year NPV under an 8-year financing gate, with optional risk aversion (CVaR).
 
-## Parameters (examples; see JSON)
-
-### Biomass logistics
-- $\overline{B}_r$ : max biomass supply in ring $r$ (t/y, as-received)
-- $d_r$ : distance of ring $r$ (km)
-- $c^{\text{bale}}$ : base biomass cost (RMB/t)
-- $c^{\text{tr}}$ : transport cost (RMB/(t·km))
-
-### Moisture & gasification (wet → dry → syngas)
-- $x_{\text{in}}$ : inlet moisture (wet basis)
-- $x_{\text{out}}$ : outlet moisture after drying (wet basis)
-- $a$ : ash fraction in dry biomass
-- $y^{\text{char}}_s$ : char yield on dry basis (scenario)
-- $Y^{H2}_s,\;Y^{CO}_s$ : syngas yields (Nm³ per kg char_daf)
-- $\nu$ : Nm³ per kmol (constant)
-- $\rho_{O2}$ : O2-to-dry-biomass mass ratio (t O2 per t dry biomass)
-
-### FT conversion & products
-- $R^{FT}$ : target $H_2/CO$ at FT inlet (no WGS)
-- $\eta^{liq}_s$ : FT liquids yield (t liquids per kmol CO used)
-- $(f^{jet}_s, f^{dies}_s, f^{nap}_s, f^{wax}_s)$ : liquid split fractions
-- Wax upgrading yields (per t wax upgraded): $\gamma^{jet}_s,\gamma^{dies}_s,\gamma^{nap}_s$
-
-### Utilities & economics
-- Electricity energy price $p^{e}$ (RMB/kWh)
-- Electricity demand charge $p^{d}$ (RMB/(kW·month))
-- Operating hours $H$ (h/y)
-- Heat price $p^{h}$ (RMB/MJ)
-- Hydrogen price $p^{H2}$ (RMB/t)
-- Fixed O&M $C^{FOM}$ (RMB/y if built)
-- Product prices: $P^{jet},P^{dies},P^{nap},P^{wax}$ (RMB/t)
-
-### Finance
-- Discount rate $i$, degradation rate $\delta$
-- Present value factor (used in code):
-$$
-PVF(N)=\sum_{t=1}^{N}\frac{(1-\delta)^{t-1}}{(1+i)^t}
-$$
-- Gate horizon $N_g=8$, lifetime $N_L=20$
-
-### CAPEX
-- Discrete CAPEX per option $Capex_k$
-- Wax-upgrading CAPEX $Capex^{up}$
+> **Wet-basis convention:** Biomass procurement is **as-received (wet basis)**. Drying reduces mass before gasification.
 
 ---
 
-## Decision variables
+## 1. How to run
 
-### First-stage (investment)
-- $y \in \{0,1\}$ : build plant or not
-- $x_k \in \{0,1\}$ : choose capacity option $k$
-- $u \in \{0,1\}$ : build wax upgrading or not
-- $B_r \ge 0$ : biomass procured from ring $r$ (t/y, as-received)
-- $P^{peak} \ge 0$ : contracted peak power (kW) for demand charge
+### 1) Deterministic evaluation (no solver required)
+```bash
+python Biomass_to_Jet_FT_MILP.py --data Biomass_to_Jet_FT_Data.json --out results/ft.csv --no-solver
+```
 
-Derived:
-- Total biomass $B=\sum_r B_r$
-- Jet capacity (t/y): $Cap^{jet}=\sum_k Cap^{jet}_k x_k$
-- Total CAPEX:
-$$
-Capex0=\sum_k Capex_k x_k + Capex^{up}u
-$$
+### 2) MILP optimization (requires PuLP + a MILP solver backend)
+```bash
+python Biomass_to_Jet_FT_MILP.py --data Biomass_to_Jet_FT_Data.json --out results/ft.csv
+```
 
-### Second-stage (operations, per scenario $s$)
-Key mass/energy and product variables:
-- $B^{dry}_s,\;B^{after}_s,\;W^{rem}_s$ : dry solids, after-drying mass, removed water
-- $Char^{dry}_s,\;Char^{daf}_s$
-- $H2^{Nm3}_s,\;CO^{Nm3}_s,\;H2^{kmol}_s,\;CO^{kmol}_s$
-- $CO^{use}_s$ : CO used in FT (kmol/y)
-- $H2^{make}_s$ : H2 make-up (t/y)
-- $L^{liq}_s$ : FT liquids (t/y)
-- Products: $Jet_s,\;Dies_s,\;Nap_s,\;Wax_s$
-- Wax upgrading: $Wax^{up}_s,\;Wax^{sell}_s$
-- Electricity $E_s$ (kWh/y), drying heat $Q^{dry}_s$ (MJ/y)
+### 3) Choose solver / show solver log
+```bash
+python Biomass_to_Jet_FT_MILP.py --data ... --out results/ft.csv --solver cbc
+python Biomass_to_Jet_FT_MILP.py --data ... --out results/ft.csv --solver gurobi --solver-msg
+```
 
----
+### 4) Counterfactual reporting (MILP only)
+```bash
+python Biomass_to_Jet_FT_MILP.py --data ... --out results/ft_v2.csv \
+  --report-counterfactual --report-both-upgrade
+```
 
-## Constraints
+### 5) Risk-averse optimization (MILP only; CVaR)
+```bash
+python Biomass_to_Jet_FT_MILP.py --data ... --out results/ft.csv \
+  --risk-alpha 0.9 --risk-lambda 0.3
+```
 
-### (1) Capacity selection and build logic
-Choose exactly one capacity option if built:
-$$
-\sum_{k} x_k = y
-$$
-Wax upgrading only if built:
-$$
-u \le y
-$$
-Biomass only if built:
-$$
-0 \le B_r \le \overline{B}_r \, y \quad \forall r
-$$
-
-> Implementation note: **avoid** having a “0-capacity” option inside $\mathcal{K}$ (or enforce $Cap^{jet}\ge Cap^{min}y$),
-> otherwise the solver can pick $y=1$ with zero capacity.
+Outputs:
+- `*_policy.csv`: scenario-by-scenario rows for the “policy” run.
+- (optional) `*_cf_*.csv`: counterfactual runs (forced build / relaxed gate).
+- The script prints a JSON bundle to stdout containing **NPV**, **expected profit**, and **scenario rows**.
 
 ---
 
-### (2) Moisture balance (as-received → dry solids)
-$$
-B^{dry}_s = (1-x_{in})B
-$$
-$$
-B^{after}_s = \frac{B^{dry}_s}{1-x_{out}},\qquad
-W^{rem}_s = B - B^{after}_s
-$$
+## 2. Model structure (high level)
+
+Process chain:
+
+**Biomass (wet, as-received)**  
+→ **Drying / size reduction**  
+→ **Entrained-flow gasification (O₂ supplied by ASU)**  
+→ **Syngas (H₂, CO)**  
+→ **(optional) WGS module (linearized)**  
+→ **FT synthesis (no RWGS in this model)**  
+→ **Liquid split** (Jet / Diesel / Naphtha / Wax)  
+→ **(optional) Wax upgrading** (Wax → Jet/Diesel/Naphtha increments)
+
+Uncertainty is represented by discrete **scenarios** `s ∈ S` with probability `π_s`. Scenario parameters include: char yield, syngas yields, ASU electricity, FT yield, product split, drying heat, etc.
 
 ---
 
-### (3) Char and syngas yields
-$$
-Char^{dry}_s = y^{char}_s B^{dry}_s
-$$
-$$
-Char^{daf}_s = Char^{dry}_s - a B^{dry}_s,\qquad Char^{daf}_s \ge 0
-$$
-$$
-H2^{Nm3}_s = Y^{H2}_s \cdot Char^{daf}_s \cdot 1000,\qquad
-CO^{Nm3}_s = Y^{CO}_s \cdot Char^{daf}_s \cdot 1000
-$$
-$$
-H2^{kmol}_s = \frac{H2^{Nm3}_s}{\nu},\qquad
-CO^{kmol}_s = \frac{CO^{Nm3}_s}{\nu}
-$$
+## 3. Sets and indices
+
+- `r ∈ R`: biomass supply rings (distance bins)
+- `s ∈ S`: scenarios, with probability `π_s`
+- `k ∈ K`: **discrete** jet capacity options (t/y)
 
 ---
 
-### (4) FT conversion, no WGS, H2 make-up
-$$
-0 \le CO^{use}_s \le CO^{kmol}_s
-$$
-$$
-H2^{make,kmol}_s \ge R^{FT} \cdot CO^{use}_s - H2^{kmol}_s,\qquad H2^{make,kmol}_s\ge 0
-$$
-$$
-H2^{make}_s = \frac{2}{1000} H2^{make,kmol}_s
-$$
-$$
-L^{liq}_s = \eta^{liq}_s \cdot CO^{use}_s
-$$
+## 4. Data (JSON) and units
+
+### Key JSON blocks
+- `feedstock.*` : ultimate analysis (dry wt%), dry LHV (MJ/kg)
+- `process.*` : moisture in/out (wet basis), entrained-flow O₂ ratio, FT target H₂/CO, electricity intensities  
+  - `process.wgs.enable_WGS` (optional, default false)  
+  - `process.wgs.steam_cost_RMB_per_kmol_CO_shift` (optional)
+- `biomass_rings[]` : `distance_km`, `max_supply_tpy` (as-received)
+- `economic.*` : prices (RMB), operating hours (h/y), discount/degradation rates, fixed O&M  
+  - `economic.peak_load_factor` (optional, default 1.0)
+- `capex.*` : discrete capacity list + CAPEX0 per option, optional wax-upgrading CAPEX0
+- `scenarios[]` : scenario-specific yields / utilities / splits / probabilities
+- `model.bigM_wax` : Big-M for wax-upgrading activation
+- `model.fixed` : fixed choices for deterministic evaluation
+- (optional) `model.min_biomass_if_built_tpy` : prevents degenerate “build=1 but no feed”
+- (optional) `model.wax_upgrading_max_tpy` : upgrading capacity upper bound
+
+### Units
+- Mass flow: **t/y**
+- Syngas: **Nm³/y**, converted to **kmol/y** using `Nm3_per_kmol`
+- Electricity: **kWh/y**
+- Heat: **MJ/y**
+- Prices: **RMB** (per relevant unit)
 
 ---
 
-### (5) Product split and jet capacity
-Base products:
-$$
-Jet^{base}_s=f^{jet}_s L^{liq}_s,\;
-Dies^{base}_s=f^{dies}_s L^{liq}_s,\;
-Nap^{base}_s=f^{nap}_s L^{liq}_s,\;
-Wax_s=f^{wax}_s L^{liq}_s
-$$
+## 5. Decision variables
 
-Wax upgrading (Big-M logic):
-$$
-0\le Wax^{up}_s \le Wax_s,\qquad Wax^{up}_s \le M^{wax}u
-$$
-$$
-Wax^{sell}_s = Wax_s - Wax^{up}_s
-$$
+### 5.1 First-stage (investment / sizing; scenario-independent)
+- `build ∈ {0,1}` : build plant or not
+- `cap_choice_k ∈ {0,1}` : choose one capacity option `k`
+- `cap_jet_tpy ≥ 0` : nameplate jet capacity implied by `cap_choice_k`
+- `wax_upgrade ∈ {0,1}` : build wax upgrading or not
+- `bio_ring_r_tpy ≥ 0` : biomass procured from ring `r` (as-received)
+- `P_peak_kW ≥ 0` : contracted peak power for demand charge (covers all scenarios)
 
-Upgraded products:
-$$
-Jet_s = Jet^{base}_s + \gamma^{jet}_s Wax^{up}_s
-$$
-$$
-Dies_s = Dies^{base}_s + \gamma^{dies}_s Wax^{up}_s,\qquad
-Nap_s = Nap^{base}_s + \gamma^{nap}_s Wax^{up}_s
-$$
+Discrete CAPEX0:
+- `capex0_RMB = Σ_k capex0_k * cap_choice_k + capex_up * wax_upgrade`
 
-Jet capacity:
-$$
-Jet_s \le Cap^{jet}\qquad \forall s
-$$
+### 5.2 Second-stage (operations; per scenario `s`)
+Core variables per scenario:
+- `dry_solids_tpy_s`, `water_removed_tpy_s`
+- `char_dry_tpy_s`, `char_daf_tpy_s`
+- `H2_Nm3_y_s`, `CO_Nm3_y_s` and `H2_kmol_y_s`, `CO_kmol_y_s`
+- (optional) `CO_shift_kmol_y_s` (WGS)
+- `CO_used_kmol_y_s`
+- `H2_makeup_tpy_s`
+- `liquids_tpy_s`
+- Base products: `jet_base_tpy_s`, `diesel_base_tpy_s`, `naphtha_base_tpy_s`, `wax_tpy_s`
+- Wax upgrading: `wax_upgraded_tpy_s`, `wax_sold_tpy_s`
+- Final products: `jet_total_tpy_s`, `diesel_total_tpy_s`, `naphtha_total_tpy_s`
+- Electricity: `E_kWh_s`
 
 ---
 
-### (6) Oxygen requirement and electricity peak sizing
-Oxygen:
-$$
-O2_s = \rho_{O2} B^{dry}_s
-$$
+## 6. Core constraints (what the code enforces)
 
-Electricity balance (implementation uses linear intensities):
-- grinding/feedpress based on thermal input from $LHV_{dry}$
-- ASU: $k^{asu}_s \cdot O2_s$
-- FT: $k^{ft} \cdot L^{liq}_s$
-- upgrading: $k^{up} \cdot Wax^{up}_s$
+### 6.1 Build & discrete capacity
+- Choose exactly one capacity option if built: `Σ_k cap_choice_k = build`
+- Upgrading only if built: `wax_upgrade ≤ build`
+- Ring supplies: `bio_ring_r_tpy ≤ max_supply_r * build`
+- Total biomass: `B = Σ_r bio_ring_r_tpy`
+- (optional) minimum feed if built: `B ≥ min_biomass_if_built_tpy * build`
 
-Peak demand must cover all scenarios:
-$$
-E_s \le H \cdot P^{peak}\qquad \forall s
-$$
+### 6.2 Moisture balance (wet → dry)
+Let `x_in` be inlet moisture (wet basis) and `x_out` outlet moisture.
+- `dry_solids = B * (1 − x_in)`
+- `after_dry_ar = dry_solids / (1 − x_out)`
+- `water_removed = B − after_dry_ar`
+
+### 6.3 Char, ash correction, syngas yields
+- `char_dry = y_char_s * dry_solids`
+- `char_daf = char_dry − ash_frac * dry_solids`, with `char_daf ≥ 0`
+- `H2_Nm3 = Y_H2_s * char_daf * 1000`
+- `CO_Nm3 = Y_CO_s * char_daf * 1000`
+- Convert to kmol:
+  - `H2_kmol = H2_Nm3 / Nm3_per_kmol`
+  - `CO_kmol = CO_Nm3 / Nm3_per_kmol`
+
+### 6.4 (Optional) linear WGS
+If enabled:
+- `0 ≤ CO_shift ≤ CO_kmol`
+- Effective syngas:
+  - `H2_eff = H2_kmol + CO_shift`
+  - `CO_eff = CO_kmol − CO_shift`
+
+If not enabled:
+- `H2_eff = H2_kmol`, `CO_eff = CO_kmol`
+
+### 6.5 FT conversion and H₂ make-up (no RWGS)
+- `CO_used ≤ CO_eff`
+- `H2_makeup_kmol ≥ R_FT * CO_used − H2_eff`, `H2_makeup_kmol ≥ 0`
+- `H2_makeup_tpy = H2_makeup_kmol * 2 / 1000`
+- `liquids = η_liq_s * CO_used`
+
+### 6.6 Product split + **final jet capacity**
+Base split from FT liquids:
+- `jet_base = f_ker_s * liquids`
+- `diesel_base = f_dis_s * liquids`
+- `naphtha_base = f_nap_s * liquids`
+- `wax = f_wax_s * liquids`
+
+Wax upgrading (Big-M activation):
+- `wax_upgraded ≤ wax`
+- `wax_upgraded ≤ M_wax * wax_upgrade`
+- `wax_sold = wax − wax_upgraded`
+- (optional) upgrading capacity: `wax_upgraded ≤ wax_upgrading_max_tpy * wax_upgrade`
+
+Final products:
+- `jet_total = jet_base + γ_jet_s * wax_upgraded`
+- `diesel_total = diesel_base + γ_dis_s * wax_upgraded`
+- `naphtha_total = naphtha_base + γ_nap_s * wax_upgraded`
+
+**Jet capacity constraint (nameplate):**
+- `jet_total ≤ cap_jet_tpy`
+
+> In this model, the jet capacity is enforced on the **final jet stream** including wax-upgrading increments.
+
+### 6.7 Oxygen requirement + electricity peak sizing
+O₂ requirement:
+- `O2_required = ρ_O2 * dry_solids`
+
+Electricity components (linear):
+- Grinding/feed press: proportional to thermal input from `LHV_dry`
+- ASU: `ASU_kWh_per_tO2_s * O2_required`
+- FT: `kWh_per_t_liquids * liquids`
+- Upgrading: `kWh_per_t_wax * wax_upgraded`
+
+Peak sizing (first-stage) uses a linear “load factor” approximation:
+- `E_kWh_s ≤ (H_op * peak_load_factor) * P_peak_kW` for all scenarios `s`
+  - `peak_load_factor = 1.0` reduces to the average-power bound.
 
 ---
 
-## Economics (per scenario)
+## 7. Economics
 
-### Biomass cost (scenario-independent)
-$$
-C^{bio}=\sum_r (c^{bale}+c^{tr}d_r)\,B_r
-$$
+### 7.1 Biomass cost (ring-based)
+For each ring:
+- `cost_r = (bailing + transport * distance_km_r) * bio_ring_r_tpy`
+Total:
+- `C_bio = Σ_r cost_r`
 
-### Electricity: two-part tariff
-$$
-C^{elec}_s = p^{e}E_s + 12\,p^{d}P^{peak}
-$$
+### 7.2 Electricity tariff (two-part)
+- `C_elec_s = p_kWh * E_kWh_s + 12 * p_demand * P_peak_kW`
 
-### Other OPEX and revenue
-$$
-C^{H2}_s = p^{H2}\,H2^{make}_s,\qquad
-C^{heat}_s=p^{h}Q^{dry}_s,\qquad
-C^{FOM}=C^{FOM}\,y
-$$
-$$
-Rev_s = P^{jet}Jet_s + P^{dies}Dies_s + P^{nap}Nap_s + P^{wax}Wax^{sell}_s
-$$
-$$
-Profit_s = Rev_s - \left(C^{bio}+C^{elec}_s+C^{H2}_s+C^{heat}_s+C^{FOM}\right)
-$$
+### 7.3 Other OPEX
+- `C_H2_s = p_H2 * H2_makeup_tpy_s`
+- `C_heat_s = p_heat * drying_heat_MJ_s`
+- `C_FOM = fixed_OM * build`
+- (optional) WGS utility cost:
+  - `C_WGS_s = steam_cost_RMB_per_kmol_CO_shift * CO_shift_kmol_y_s`
+
+### 7.4 Revenue
+- `Rev_s = P_jet * jet_total + P_diesel * diesel_total + P_naphtha * naphtha_total + P_wax * wax_sold`
+
+Profit per scenario:
+- `Profit_s = Rev_s − (C_bio + C_elec_s + C_H2_s + C_heat_s + C_FOM + C_WGS_s)`
 
 Expected annual profit:
-$$
-\mathbb{E}[Profit]=\sum_s \pi_s Profit_s
-$$
+- `E[Profit] = Σ_s π_s * Profit_s`
 
 ---
 
-## NPV and objective
+## 8. Finance: PVF and NPV
 
-Gate-horizon NPV:
-$$
-NPV_{8} = -Capex0 + PVF(8)\cdot \mathbb{E}[Profit]
-$$
+Discount rate `i`, degradation rate `δ`.
 
-Lifetime NPV:
-$$
-NPV_{20} = -Capex0 + PVF(20)\cdot \mathbb{E}[Profit]
-$$
+Present value factor:
+```text
+PVF(N) = Σ_{t=1..N} (1/(1+i)^t) * (1-δ)^(t-1)
+```
 
-Financing gate (policy run):
-$$
-NPV_{8} \ge 0
-$$
+NPV definitions:
+- `NPV_8  = −Capex0 + PVF(8)  * E[Profit]`
+- `NPV_20 = −Capex0 + PVF(20) * E[Profit]`
 
-Objective:
-$$
-\max \; NPV_{20}
-$$
+Policy financing gate:
+- `NPV_8 ≥ 0`
+If no configuration satisfies the gate, the optimal solution becomes `build = 0` (no build).
 
 ---
 
-## Policy vs counterfactual reporting (important)
+## 9. Risk-averse option (CVaR of annual profit)
 
-- **Policy solve** applies the gate $NPV_8\ge 0$ → if not financeable, optimal decision is typically **$y=0$** (no build, no production).
-- For analysis/plots, the code can also run **counterfactual** solves (force build and/or relax gate) to report:
-  - best operational plan even if not financeable,
-  - both wax-upgrading options for comparison.
+If enabled via `--risk-alpha a --risk-lambda λ`, the model adds a downside-risk penalty based on the **CVaR** of annual profit.
 
-This is intentional so you can see “how much it would produce / lose money” even when the investment decision is “do not build”.
+Let `z` be VaR and `η_s` be scenario shortfall variables:
+- `η_s ≥ z − Profit_s`, `η_s ≥ 0`
+- `CVaR = z − 1/(1−a) * Σ_s π_s * η_s`
+
+Risk penalty:
+- `Penalty = E[Profit] − CVaR` (higher means worse downside risk)
+
+Risk-adjusted objective (conceptually):
+- maximize `NPV_20 − λ * PVF(20) * Penalty`
+
+Setting `λ=0` recovers the risk-neutral objective.
+
+---
+
+## 10. Solver
+
+The MILP is built with **PuLP** and solved by a backend solver:
+- Default: `CBC` (`--solver cbc`)
+- Optional: `HiGHS` (`--solver highs`, if supported by your PuLP install)
+- Optional: `Gurobi` (`--solver gurobi`, if installed and licensed)
+
+---
+
+## 11. Deterministic evaluation mode (debugging)
+
+If you run with `--no-solver` (or PuLP is not installed), the script evaluates `model.fixed`:
+- Biomass allocation: greedy ring allocation from nearest rings until `biomass_in_ar_tpy` is met.
+- CO usage is set to the maximum allowed by **final jet capacity** and available syngas.
+- If `wax_upgrade=1`, wax is upgraded according to the deterministic rule; otherwise wax is sold.
+- The same techno-economic calculations are performed per scenario and aggregated into NPV.
+
+This mode is intended for reproducible calculations and sanity checks; it does **not** optimize decisions.
