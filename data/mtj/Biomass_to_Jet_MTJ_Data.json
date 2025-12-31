@@ -1,0 +1,124 @@
+{
+  "meta": {
+    "project": "Biomass->Jet (MTJ route) 200kt Scale",
+    "note": "Syngas-limited MTJ: added gasification syngas yield fields + Nm3_per_kmol constant. WGS disabled by default."
+  },
+  "feedstock": {
+    "name": "Straw",
+    "ultimate_dry_wt_percent": {
+      "C": 45.02,
+      "H": 5.9,
+      "O": 38.82,
+      "N": 1.06,
+      "S": 0.12,
+      "Ash": 9.07
+    },
+    "LHV_dry_MJ_per_kg": 17.0
+  },
+  "biomass_rings": [
+    {
+      "name": "0-10km",
+      "distance_km": 5,
+      "max_supply_tpy": 80000
+    },
+    {
+      "name": "10-20km",
+      "distance_km": 15,
+      "max_supply_tpy": 80000
+    },
+    {
+      "name": "20-30km",
+      "distance_km": 25,
+      "max_supply_tpy": 80000
+    }
+  ],
+  "process": {
+    "moisture_in_wb": 0.25,
+    "moisture_out_wb": 0.1,
+    "gasification": {
+      "O2_to_dry_biomass_mass_ratio": 0.35
+    },
+    "mtj": {
+      "yields_t_per_t_meoh": {
+        "jet": 0.34,
+        "gasoline": 0.1,
+        "naphtha": 0.05
+      },
+      "electricity_kWh_per_t_meoh_to_mtj": 60.0,
+      "H2_kg_per_t_meoh_to_mtj": 10.0
+    },
+    "constants": {
+      "Nm3_per_kmol": 22.414
+    }
+  },
+  "economic": {
+    "FX_RMB_per_USD": 7.2,
+    "discount_rate": 0.05,
+    "degradation_rate": 0.05,
+    "biomass_base_cost_RMB_per_t": 300.0,
+    "biomass_transport_RMB_per_t_km": 20.0,
+    "electricity_energy_RMB_per_kWh": 0.6313,
+    "electricity_demand_RMB_per_kW_month": 48.0,
+    "electricity_operating_hours_per_year": 8000.0,
+    "heat_RMB_per_MJ": 0.0,
+    "H2_RMB_per_t": 28360.0,
+    "product_prices": {
+      "jet_USD_per_t": 2490.0,
+      "gasoline_USD_per_t": 1180.0,
+      "naphtha_USD_per_t": 833.0,
+      "methanol_USD_per_t": 350.0
+    },
+    "fixed_OM_RMB_per_y": 15000000.0,
+    "mtj_fixed_OM_RMB_per_y": 5000000.0
+  },
+  "capex": {
+    "capacity_options_meoh_tpy": [
+      0,
+      60000,
+      120000,
+      180000
+    ],
+    "capex0_RMB_for_option": [
+      0,
+      891000000,
+      1350000000,
+      1720000000
+    ],
+    "mtj_capex0_RMB": 200000000
+  },
+  "model": {
+    "bigM_meoh": 10000000.0,
+    "fixed": {
+      "build": 1,
+      "cap_meoh_tpy": 120000,
+      "mtj_build": 1,
+      "biomass_in_ar_tpy": 200000
+    }
+  },
+  "scenarios": [
+    {
+      "name": "LOW",
+      "probability": 0.5,
+      "meoh_yield_t_per_t_dry": 0.35,
+      "electricity_kWh_per_t_meoh": 150.0,
+      "drying_heat_MJ_per_kg_water_removed": 2.6,
+      "ASU_kWh_per_t_O2": 190.0,
+      "char_yield_dry_fraction": 0.25,
+      "H2_yield_Nm3_per_kg_char_daf": 3.2,
+      "CO_yield_Nm3_per_kg_char_daf": 1.6,
+      "meoh_CO_to_meoh_eff": 0.95
+    },
+    {
+      "name": "HIGH",
+      "probability": 0.5,
+      "meoh_yield_t_per_t_dry": 0.45,
+      "electricity_kWh_per_t_meoh": 180.0,
+      "drying_heat_MJ_per_kg_water_removed": 3.1,
+      "ASU_kWh_per_t_O2": 250.0,
+      "char_yield_dry_fraction": 0.25,
+      "H2_yield_Nm3_per_kg_char_daf": 4.0,
+      "CO_yield_Nm3_per_kg_char_daf": 2.0,
+      "meoh_CO_to_meoh_eff": 0.95
+    }
+  ]
+}
