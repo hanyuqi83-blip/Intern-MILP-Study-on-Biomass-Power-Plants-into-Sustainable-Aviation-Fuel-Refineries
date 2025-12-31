@@ -1,0 +1,89 @@
+{
+  "meta": {
+    "project": "Biomass->Jet (FT route) 200kt Scale",
+    "note": "Scaled up to 200,000 t/y input. Supply limits increased."
+  },
+  "feedstock": {
+    "name": "Straw",
+    "ultimate_dry_wt_percent": { "C": 45.02, "H": 5.9, "O": 38.82, "N": 1.06, "S": 0.12, "Ash": 9.07 },
+    "LHV_dry_MJ_per_kg": 17.0
+  },
+  "process": {
+    "moisture_in_wb": 0.25,
+    "moisture_out_wb": 0.1,
+    "constants": { "Nm3_per_kmol": 22.414 },
+    "entrained_flow": { "O2_to_dry_biomass_mass_ratio": 0.35 },
+    "ft": {
+      "target_H2_CO": 2.1,
+      "electricity_kWh_per_t_liquids": 150.0,
+      "upgrading_electricity_kWh_per_t_wax": 40.0
+    }
+  },
+  "biomass_rings": [
+    { "name": "0-10km", "distance_km": 5, "max_supply_tpy": 80000 },
+    { "name": "10-20km", "distance_km": 15, "max_supply_tpy": 80000 },
+    { "name": "20-30km", "distance_km": 25, "max_supply_tpy": 80000 }
+  ],
+  "economic": {
+    "discount_rate": 0.05,
+    "degradation_rate": 0.05,
+    "biomass_base_cost_RMB_per_t": 300.0,
+    "biomass_transport_RMB_per_t_km": 20.0,
+    "electricity_energy_RMB_per_kWh": 0.6313,
+    "electricity_demand_RMB_per_kW_month": 48.0,
+    "electricity_operating_hours_per_year": 8000.0,
+    "heat_RMB_per_MJ": 0.0,
+    "H2_RMB_per_t": 28360.0,
+    "product_prices_RMB_per_t": {
+      "jet": 17928.0,
+      "diesel": 6500.0,
+      "naphtha": 6000.0,
+      "wax": 4000.0
+    },
+    "fixed_OM_RMB_per_y": 15000000.0
+  },
+  "capex": {
+    "capacity_options_jet_tpy": [ 0, 30000, 60000, 90000 ],
+    "capex0_RMB_for_option": [ 0, 1014190000, 1537224584, 1960613898 ],
+    "wax_upgrading_capex0_RMB": 180000000
+  },
+  "model": {
+    "bigM_wax": 10000000.0,
+    "fixed": {
+      "build": 1,
+      "cap_jet_tpy": 30000,
+      "wax_upgrade": 1,
+      "biomass_in_ar_tpy": 200000
+    }
+  },
+  "scenarios": [
+    {
+      "name": "LOW",
+      "probability": 0.5,
+      "drying_heat_MJ_per_kg_water_removed": 2.6,
+      "grinding_kWe_per_kWth": 0.01,
+      "feed_press_kWe_per_kWth": 0.0,
+      "ASU_kWh_per_t_O2": 190,
+      "char_yield_dry_fraction": 0.90,
+      "H2_yield_Nm3_per_kg_char_daf": 0.80,
+      "CO_yield_Nm3_per_kg_char_daf": 0.75,
+      "ft_liquids_t_per_kmol_CO": 0.012,
+      "product_split": { "kerosene_frac": 0.25, "diesel_frac": 0.35, "naphtha_frac": 0.15, "wax_frac": 0.25 },
+      "wax_upgrading_yields": { "jet_per_t_wax": 0.35, "diesel_per_t_wax": 0.45, "naphtha_per_t_wax": 0.15 }
+    },
+    {
+      "name": "HIGH",
+      "probability": 0.5,
+      "drying_heat_MJ_per_kg_water_removed": 3.1,
+      "grinding_kWe_per_kWth": 0.02,
+      "feed_press_kWe_per_kWth": 0.025,
+      "ASU_kWh_per_t_O2": 250,
+      "char_yield_dry_fraction": 0.95,
+      "H2_yield_Nm3_per_kg_char_daf": 0.90,
+      "CO_yield_Nm3_per_kg_char_daf": 0.85,
+      "ft_liquids_t_per_kmol_CO": 0.014,
+      "product_split": { "kerosene_frac": 0.28, "diesel_frac": 0.32, "naphtha_frac": 0.15, "wax_frac": 0.25 },
+      "wax_upgrading_yields": { "jet_per_t_wax": 0.38, "diesel_per_t_wax": 0.42, "naphtha_per_t_wax": 0.15 }
+    }
+  ]
+}
