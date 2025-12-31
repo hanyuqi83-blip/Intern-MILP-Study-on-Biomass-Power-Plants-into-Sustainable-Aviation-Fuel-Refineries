@@ -37,7 +37,7 @@ python Biomass_to_Jet_FT_MILP.py --data ... --out results/ft.csv --solver gurobi
 
 ### 4) Counterfactual reporting (MILP only)
 ```bash
-python Biomass_to_Jet_FT_MILP.py --data ... --out results/ft_v2.csv \
+python Biomass_to_Jet_FT_MILP.py --data ... --out results/ft.csv \
   --report-counterfactual --report-both-upgrade
 ```
 
